@@ -11,6 +11,7 @@ use anyhow::Context;
 
 use std::io::Write;
 use std::path::PathBuf;
+use std::path::Path;
 
 pub type Cost = NotNan<f64>;
 pub const INFINITY: Cost = unsafe { NotNan::new_unchecked(f64::INFINITY) };
@@ -87,7 +88,7 @@ fn extractors() -> IndexMap<&'static str, ExtractorDetail> {
             ExtractorDetail {
                 extractor: extract::ilp_cbc::CbcExtractor.boxed(),
                 optimal: Optimal::Dag,
-                use_for_bench: false, // takes >10 hours sometimes
+                use_for_bench: true, // takes >10 hours sometimes
             },
         ),
         #[cfg(feature = "ilp-cbc")]
@@ -145,7 +146,16 @@ fn main() {
         panic!("Unknown arguments: {:?}", rest);
     }
 
+    let ilp_res_file = Path::new(filename.as_str())
+        .parent()
+        .unwrap()
+        .join("res_ilp_file")
+        .to_string_lossy()
+        .to_string()
+        ;
+
     let mut out_file = std::fs::File::create(out_filename).unwrap();
+    let mut out_file_ilp_res = std::fs::File::create(ilp_res_file).unwrap();
 
     let egraph = EGraph::from_json_file(&filename)
         .with_context(|| format!("Failed to parse {filename}"))
@@ -165,7 +175,44 @@ fn main() {
     let tree = result.tree_cost(&egraph, &egraph.root_eclasses);
     let dag = result.dag_cost(&egraph, &egraph.root_eclasses);
 
+    let mut result_str_nodes = String::from(" \"nodes\": {\n");
+    let mut result_str_classes= String::from(" \"class_data\": {\n ");
+
     log::info!("{filename:40}\t{extractor_name:10}\t{tree:5}\t{dag:5}\t{us:5}");
+    // Construire la liste des noeuds choisis
+    let mut chosen = vec![];
+    for (class_id, node_id) in &result.choices {
+        let node = &egraph[node_id];
+        let type_ec = class_id.as_ref().split('-').next().unwrap();
+        chosen.push(format!(
+            r#"    {{ "eclass": "{}", "node_id": "{}", "op": "{}", "children": [{}] }}"#,
+            class_id,
+            node_id,
+            node.op,
+            node.children.iter()
+                .map(|c| format!("\"{}\"", c))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+
+        result_str_nodes.push_str(format!(
+            "  \"{}\" :{{\n   \"op\": {},\n   \"children\" : [{}],\n   \"eclass\": \"{}\"\n  }},\n",
+            node_id,
+            serde_json::to_string(&node.op).unwrap(),
+            node.children.iter()
+                .map(|c| format!("\"{}\"", c))
+                .collect::<Vec<_>>()
+                .join(", "),
+            class_id
+        ).as_str());
+
+        result_str_classes.push_str(format!(
+            "  \"{}\":{{\n   \"type\": \"{}\"}}\n, ", class_id, type_ec
+        ).as_str())
+    }
+    result_str_nodes.pop(); result_str_nodes.pop(); result_str_nodes.push('}');
+    result_str_classes.pop();result_str_classes.pop();result_str_classes.push('}');
+
     writeln!(
         out_file,
         r#"{{ 
@@ -173,10 +220,22 @@ fn main() {
     "extractor": "{extractor_name}", 
     "tree": {tree}, 
     "dag": {dag}, 
-    "micros": {us}
-}}"#
+    "micros": {us},
+    "chosen_nodes": [
+    {}
+    ]
+}}"#,
+chosen.join(",\n")
     )
     .unwrap();
+
+    writeln!(
+        out_file_ilp_res,
+        r#"
+    {{{}, "root_eclasses" : [], {}}}
+        "#,
+        result_str_nodes, result_str_classes
+    ).unwrap();
 }
 
 #[cfg(test)]
