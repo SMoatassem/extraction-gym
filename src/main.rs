@@ -170,7 +170,7 @@ fn main() {
     let result = ed.extractor.extract(&egraph, &egraph.root_eclasses);
     let us = start_time.elapsed().as_micros();
 
-    // result.check(&egraph);
+    result.check(&egraph);
 
     let tree = result.tree_cost(&egraph, &egraph.root_eclasses);
     let dag = result.dag_cost(&egraph, &egraph.root_eclasses);
@@ -181,12 +181,10 @@ fn main() {
     log::info!("{filename:40}\t{extractor_name:10}\t{tree:5}\t{dag:5}\t{us:5}");
     // Construire la liste des noeuds choisis
     let mut chosen = vec![];
-    // let mut seen = vec![];
     for (class_id, node_id) in &result.choices {
         let node = &egraph[node_id];
         let type_ec = class_id.as_ref().split('-').next().unwrap();
         
-        // seen.push(node_id);
 
         chosen.push(format!(
             r#"    {{ "eclass": "{}", "node_id": "{}", "op": "{}", "children": [{}] }}"#,
@@ -219,10 +217,7 @@ fn main() {
             "  \"{}\":{{\n   \"type\": \"{}\"}}\n, ", class_id, type_ec
         ).as_str())
 
-        // for child in node.children {
-        //     if !seen.contains(&&child) {
-        //         seen.push(&child)
-        //     }
+
     }
     result_str_nodes.pop(); result_str_nodes.pop(); result_str_nodes.push('}');
     result_str_classes.pop();result_str_classes.pop();result_str_classes.push('}');
