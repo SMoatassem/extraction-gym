@@ -149,7 +149,7 @@ fn main() {
     let ilp_res_file = Path::new(filename.as_str())
         .parent()
         .unwrap()
-        .join("res_ilp_file")
+        .join("res_ilp_file.json")
         .to_string_lossy()
         .to_string()
         ;
@@ -181,6 +181,7 @@ fn main() {
     log::info!("{filename:40}\t{extractor_name:10}\t{tree:5}\t{dag:5}\t{us:5}");
     // Construire la liste des noeuds choisis
     let mut chosen = vec![];
+
     for (class_id, node_id) in &result.choices {
         let node = &egraph[node_id];
         let type_ec = class_id.as_ref().split('-').next().unwrap();
@@ -205,7 +206,10 @@ fn main() {
                 .map(|c| {
                     let child_node = &egraph[c];
                     let ec_child = &child_node.eclass;
-                    let chosen_child = &result.choices.get(ec_child).unwrap();
+                    let chosen_child = &result.choices.get(ec_child).unwrap_or(c);
+                    // The unwrap_or is added to avoid panicking when using incomplete faster-ilp-cbc
+                    // in which we happen to have an incomplete construction of choices, we should
+                    // therefore stick with ilp-cbc at the cost of it's potential overhead
                     format!("\"{}\"", chosen_child)
                 })
                 .collect::<Vec<_>>()
@@ -217,7 +221,10 @@ fn main() {
             "  \"{}\":{{\n   \"type\": \"{}\"}}\n, ", class_id, type_ec
         ).as_str())
 
-
+        // for child in node.children {
+        //     if !seen.contains(&&child) {
+        //         seen.push(&child)
+        //     }
     }
     result_str_nodes.pop(); result_str_nodes.pop(); result_str_nodes.push('}');
     result_str_classes.pop();result_str_classes.pop();result_str_classes.push('}');
